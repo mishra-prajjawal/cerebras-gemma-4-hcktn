@@ -16,6 +16,7 @@ class CerebrasClient:
     """Single shared client over the OpenAI-compatible Cerebras endpoint."""
     last_sim_step_idx: int = 0
     last_sim_mistake: bool = False
+    last_sim_trigger: bool = False
 
     def __init__(self) -> None:
         s = get_settings()
@@ -94,6 +95,11 @@ class CerebrasClient:
                 return res_obs  # type: ignore[return-value]
                 
             elif out is StateDelta:
+                trigger = getattr(CerebrasClient, "last_sim_trigger", False)
+                if not trigger:
+                    res_delta = StateDelta(changed=False, current_step_idx=step_idx, notes="Webcam stream frame, no user click trigger")
+                    return res_delta  # type: ignore[return-value]
+                
                 next_step = step_idx if is_mistake else min(step_idx + 1, 2)
                 res_delta = StateDelta(changed=True, current_step_idx=next_step, notes=f"Transitioned to {next_step}")
                 return res_delta  # type: ignore[return-value]

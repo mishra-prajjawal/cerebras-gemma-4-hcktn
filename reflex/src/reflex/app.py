@@ -496,6 +496,7 @@ HTML_CONTENT = """
         ];
         let currentStepIdx = 0;
         let ttsEnabled = true;
+        let simTrigger = false;
 
         // Render plan steps
         function renderPlan() {
@@ -652,8 +653,10 @@ HTML_CONTENT = """
                 ts: Date.now() / 1000,
                 seq: seqNum++,
                 sim_step_idx: currentStepIdx,
-                sim_mistake: withMistakeOverride !== null ? withMistakeOverride : (window.lastSimMistakeState || false)
+                sim_mistake: withMistakeOverride !== null ? withMistakeOverride : (window.lastSimMistakeState || false),
+                sim_trigger: simTrigger
             }));
+            simTrigger = false;
         }
 
         // Simulating frames dynamically by drawing on canvas
@@ -766,10 +769,12 @@ HTML_CONTENT = """
         }
 
         demoMistakeBtn.addEventListener("click", () => {
+            simTrigger = true;
             drawMockBench(currentStepIdx, true);
         });
 
         demoSuccessBtn.addEventListener("click", () => {
+            simTrigger = true;
             drawMockBench(currentStepIdx, false);
         });
     </script>
@@ -801,6 +806,7 @@ async def _read_ws(websocket: WebSocket, frames_q: asyncio.Queue[Frame], stop_ev
                 CerebrasClient.last_sim_step_idx = int(data["sim_step_idx"])
             if "sim_mistake" in data:
                 CerebrasClient.last_sim_mistake = bool(data["sim_mistake"])
+            CerebrasClient.last_sim_trigger = bool(data.get("sim_trigger", False))
                 
             img_b64 = data.get("image", "")
             if not img_b64:
