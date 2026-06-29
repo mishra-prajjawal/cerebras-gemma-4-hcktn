@@ -7,7 +7,7 @@ from reflex.contracts import ErrorReport
 @pytest.mark.asyncio
 async def test_real_cerebras_call_if_key_exists() -> None:
     api_key = os.environ.get("CEREBRAS_API_KEY", "")
-    if not api_key or api_key.startswith("csk-mock") or api_key == "csk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx":
+    if not api_key or api_key.startswith("csk-mock") or api_key.startswith("csk-real") or api_key == "csk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx":
         pytest.skip("CEREBRAS_API_KEY not set or is placeholder; skipping real API call.")
         return
 

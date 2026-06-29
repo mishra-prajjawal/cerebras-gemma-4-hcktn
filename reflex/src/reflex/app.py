@@ -632,7 +632,7 @@ HTML_CONTENT = """
         });
 
         // Send a frame to WebSocket
-        function sendFrame() {
+        function sendFrame(withMistakeOverride = null) {
             if (socket.readyState !== WebSocket.OPEN) return;
 
             const tempCanvas = document.createElement("canvas");
@@ -650,7 +650,9 @@ HTML_CONTENT = """
             socket.send(JSON.stringify({
                 image: imgB64,
                 ts: Date.now() / 1000,
-                seq: seqNum++
+                seq: seqNum++,
+                sim_step_idx: currentStepIdx,
+                sim_mistake: withMistakeOverride !== null ? withMistakeOverride : (window.lastSimMistakeState || false)
             }));
         }
 
@@ -758,8 +760,9 @@ HTML_CONTENT = """
                 }
             }
 
+            window.lastSimMistakeState = withMistake;
             addLog(`Simulated workbench state for Step ${stepIdx} (Mistake=${withMistake})`);
-            sendFrame();
+            sendFrame(withMistake);
         }
 
         demoMistakeBtn.addEventListener("click", () => {
@@ -792,6 +795,13 @@ async def _read_ws(websocket: WebSocket, frames_q: asyncio.Queue[Frame], stop_ev
             if stop_event.is_set():
                 break
             data = await websocket.receive_json()
+            
+            # Sync simulated step info to CerebrasClient static variables to make mock work
+            if "sim_step_idx" in data:
+                CerebrasClient.last_sim_step_idx = int(data["sim_step_idx"])
+            if "sim_mistake" in data:
+                CerebrasClient.last_sim_mistake = bool(data["sim_mistake"])
+                
             img_b64 = data.get("image", "")
             if not img_b64:
                 continue

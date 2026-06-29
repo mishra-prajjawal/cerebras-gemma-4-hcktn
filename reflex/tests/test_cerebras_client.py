@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Set mock API key before importing client/config
-os.environ["CEREBRAS_API_KEY"] = "csk-mockkey123456"
+os.environ["CEREBRAS_API_KEY"] = "csk-realtestkey123456"
 
 from reflex.cerebras_client import CerebrasClient
 from reflex.contracts import ErrorReport, Strict
@@ -28,6 +28,10 @@ async def test_schema_generation() -> None:
 
 @pytest.mark.asyncio
 async def test_structured_success() -> None:
+    import os
+    os.environ["CEREBRAS_API_KEY"] = "csk-realtestkey123456"
+    from reflex.config import get_settings
+    get_settings.cache_clear()
     with patch("reflex.cerebras_client.AsyncOpenAI") as mock_openai_class:
         mock_client = MagicMock()
         mock_openai_class.return_value = mock_client
