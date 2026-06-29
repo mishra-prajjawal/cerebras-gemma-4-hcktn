@@ -10,6 +10,7 @@ src/memeforge/personas.py
 src/memeforge/pipeline.py
 src/memeforge/rate_limiter.py
 src/memeforge/render.py
+src/memeforge/web.py
 src/memeforge.egg-info/PKG-INFO
 src/memeforge.egg-info/SOURCES.txt
 src/memeforge.egg-info/dependency_links.txt
@@ -20,4 +21,6 @@ src/memeforge/agents/base.py
 src/memeforge/agents/comedian.py
 src/memeforge/agents/judge.py
 tests/test_contracts.py
+tests/test_pipeline.py
 tests/test_render.py
+tests/test_web.py
