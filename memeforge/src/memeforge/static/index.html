@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meme Forge - Real-Time AI Writers' Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0b0f19;
+            --bg-surface: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --primary: #8b5cf6;
+            --primary-glow: rgba(139, 92, 246, 0.4);
+            --secondary: #ec4899;
+            --secondary-glow: rgba(236, 72, 153, 0.4);
+            --accent: #06b6d4;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(236, 72, 153, 0.15) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .logo {
+            font-size: 3rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+            display: inline-block;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            font-weight: 300;
+        }
+
+        .speed-badge {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #c084fc;
+            margin-top: 0.75rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+
+        @media (min-width: 768px) {
+            .grid {
+                grid-template-columns: 1.2fr 1fr;
+            }
+        }
+
+        .card {
+            background: var(--bg-surface);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border: 1px solid var(--border-color);
+            border-radius: 1.25rem;
+            padding: 2rem;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.7);
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Camera / Upload Section */
+        .dropzone-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            border: 2px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .dropzone-container:hover {
+            border-color: var(--primary);
+            background: rgba(139, 92, 246, 0.05);
+        }
+
+        .dropzone-content {
+            text-align: center;
+            padding: 1.5rem;
+            pointer-events: none;
+        }
+
+        .dropzone-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .preview-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        .camera-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+            transform: scaleX(-1);
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border: none;
+            box-shadow: 0 4px 14px 0 var(--primary-glow);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px 0 var(--primary-glow);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .input-group {
+            margin-top: 1.5rem;
+        }
+
+        .input-label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .input-field {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            font-family: inherit;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .input-field:focus {
+            border-color: var(--primary);
+        }
+
+        /* Swarm Comedians Section */
+        .comedians-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .comedian-item {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .comedian-item.active {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px 0 rgba(139, 92, 246, 0.15);
+        }
+
+        .comedian-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .comedian-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: capitalize;
+        }
+
+        .comedian-status {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+        }
+
+        .comedian-status.writing {
+            color: #fbbf24;
+            background: rgba(251, 191, 36, 0.1);
+        }
+
+        .comedian-status.done {
+            color: #34d399;
+            background: rgba(52, 211, 153, 0.1);
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
+            border-radius: 9999px;
+            transition: width 0.3s ease;
+        }
+
+        /* Results / Timing Dashboard */
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 2rem;
+            animation: slideUp 0.6s ease-out;
+        }
+
+        .metric-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--text-main);
+            background: linear-gradient(135deg, #a78bfa 0%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        /* Meme Carousel/Grid */
+        .results-section {
+            margin-top: 3rem;
+            display: none;
+        }
+
+        .meme-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+
+        @media (min-width: 768px) {
+            .meme-grid {
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            }
+        }
+
+        .meme-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+
+        .meme-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+        }
+
+        .meme-image-container {
+            width: 100%;
+            aspect-ratio: 1;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .meme-image-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .meme-info {
+            padding: 1.25rem;
+        }
+
+        .meme-score-badge {
+            display: inline-block;
+            background: rgba(52, 211, 153, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(52, 211, 153, 0.2);
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .meme-reason {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Live Camera Controls overlay */
+        .camera-overlay {
+            position: absolute;
+            bottom: 1rem;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            pointer-events: auto;
+        }
+
+        .shutter-btn {
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 50%;
+            background: white;
+            border: 4px solid var(--primary);
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+            transition: all 0.2s ease;
+        }
+
+        .shutter-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .shutter-btn:active {
+            transform: scale(0.9);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">Meme Forge</div>
+            <div class="subtitle">AI Writers' Room • Live Swarm Captioning</div>
+            <div class="speed-badge">🚀 Powered by Cerebras & Gemma 4</div>
+        </header>
+
+        <div class="grid">
+            <!-- Left Panel: Input & Photo -->
+            <div class="card">
+                <h3 class="card-title">📸 Load Input Image</h3>
+                
+                <div class="dropzone-container" id="dropzone">
+                    <div class="dropzone-content" id="dropzonePrompt">
+                        <span class="dropzone-icon">📁</span>
+                        <p>Drag & drop image here or click to upload</p>
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">Supports JPG, PNG</p>
+                    </div>
+                    
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    
+                    <video class="camera-stream" id="cameraStream" autoplay playsinline></video>
+                    <img class="preview-img" id="previewImg" alt="Preview">
+                    
+                    <div class="camera-overlay" id="cameraOverlay" style="display: none;">
+                        <button class="shutter-btn" id="shutterBtn" title="Take Photo"></button>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn" id="cameraBtn">📹 Roast My Desk</button>
+                    <button class="btn" id="uploadBtn">📤 Upload File</button>
+                </div>
+
+                <div class="input-group">
+                    <label class="input-label" for="topicInput">🎯 STEER TOPIC (OPTIONAL)</label>
+                    <input class="input-field" type="text" id="topicInput" placeholder="e.g. software engineer, corporate life, coffee...">
+                </div>
+
+                <button class="btn btn-primary" id="forgeBtn" style="width: 100%; margin-top: 1.5rem; font-size: 1.1rem; padding: 0.9rem;" disabled>
+                    🔥 SUMMON WRITERS
+                </button>
+            </div>
+
+            <!-- Right Panel: Swarm Monitor -->
+            <div class="card">
+                <h3 class="card-title">🎭 The Comedian Swarm</h3>
+                <div class="comedians-list">
+                    <div class="comedian-item" id="comedian-0">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a deadpan absurdist</span>
+                            <span class="comedian-status" id="status-0">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-0"></div>
+                        </div>
+                    </div>
+                    <div class="comedian-item" id="comedian-1">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a chronically online Gen-Z poster</span>
+                            <span class="comedian-status" id="status-1">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-1"></div>
+                        </div>
+                    </div>
+                    <div class="comedian-item" id="comedian-2">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a hype-beast sports announcer</span>
+                            <span class="comedian-status" id="status-2">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-2"></div>
+                        </div>
+                    </div>
+                    <div class="comedian-item" id="comedian-3">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a tired corporate middle-manager</span>
+                            <span class="comedian-status" id="status-3">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-3"></div>
+                        </div>
+                    </div>
+                    <div class="comedian-item" id="comedian-4">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a dramatic Shakespearean bard</span>
+                            <span class="comedian-status" id="status-4">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-4"></div>
+                        </div>
+                    </div>
+                    <div class="comedian-item" id="comedian-5">
+                        <div class="comedian-header">
+                            <span class="comedian-name">a wholesome dad-joke enthusiast</span>
+                            <span class="comedian-status" id="status-5">Sleeping 😴</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-5"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Section: Results -->
+        <div class="results-section" id="resultsSection">
+            <header style="margin-top: 4rem; margin-bottom: 2rem;">
+                <div class="logo" style="font-size: 2.2rem;">Top Memes Crafted</div>
+            </header>
+            
+            <div class="dashboard">
+                <div class="metric-card">
+                    <div class="metric-value" id="valWriters">6</div>
+                    <div class="metric-label">Comedians Swarmed</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="valTime">780ms</div>
+                    <div class="metric-label">Total Latency</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="valSpeed">950.4</div>
+                    <div class="metric-label">Tokens / Sec</div>
+                </div>
+            </div>
+
+            <div class="meme-grid" id="memeGrid">
+                <!-- Meme cards injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const dropzonePrompt = document.getElementById('dropzonePrompt');
+        const fileInput = document.getElementById('fileInput');
+        const previewImg = document.getElementById('previewImg');
+        const cameraStream = document.getElementById('cameraStream');
+        const cameraOverlay = document.getElementById('cameraOverlay');
+        const shutterBtn = document.getElementById('shutterBtn');
+        const cameraBtn = document.getElementById('cameraBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const forgeBtn = document.getElementById('forgeBtn');
+        const topicInput = document.getElementById('topicInput');
+        
+        const resultsSection = document.getElementById('resultsSection');
+        const memeGrid = document.getElementById('memeGrid');
+        
+        const valWriters = document.getElementById('valWriters');
+        const valTime = document.getElementById('valTime');
+        const valSpeed = document.getElementById('valSpeed');
+        
+        let loadedBase64 = "";
+        let cameraStreamObj = null;
+
+        // Trigger file input
+        dropzone.addEventListener('click', () => {
+            if (!cameraStreamObj) {
+                fileInput.click();
+            }
+        });
+
+        uploadBtn.addEventListener('click', () => {
+            stopCamera();
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Drag & drop handlers
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = 'var(--primary)';
+        });
+
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+            stopCamera();
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect();
+            }
+        });
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // Downscale image to max 768 length edge before sending for efficiency
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    const max_edge = 768;
+                    if (width > max_edge || height > max_edge) {
+                        if (width > height) {
+                            height = Math.round((height * max_edge) / width);
+                            width = max_edge;
+                        } else {
+                            width = Math.round((width * max_edge) / height);
+                            height = max_edge;
+                        }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    loadedBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+                    
+                    previewImg.src = canvas.toDataURL('image/jpeg');
+                    previewImg.style.display = 'block';
+                    dropzonePrompt.style.display = 'none';
+                    forgeBtn.disabled = false;
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Camera capture
+        cameraBtn.addEventListener('click', async () => {
+            stopCamera();
+            previewImg.style.display = 'none';
+            dropzonePrompt.style.display = 'none';
+            cameraStream.style.display = 'block';
+            cameraOverlay.style.display = 'flex';
+            
+            try {
+                cameraStreamObj = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 1024 }, height: { ideal: 768 } },
+                    audio: false
+                });
+                cameraStream.srcObject = cameraStreamObj;
+            } catch (err) {
+                console.error("Camera access error:", err);
+                alert("Could not access camera. Please check permissions or upload a file.");
+                stopCamera();
+            }
+        });
+
+        shutterBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (!cameraStreamObj) return;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = cameraStream.videoWidth || 640;
+            canvas.height = cameraStream.videoHeight || 480;
+            const ctx = canvas.getContext('2d');
+            
+            // Mirror back for user camera snapshot
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(cameraStream, 0, 0, canvas.width, canvas.height);
+            
+            // Revert mirror for base64 output
+            loadedBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+            
+            previewImg.src = canvas.toDataURL('image/jpeg');
+            previewImg.style.display = 'block';
+            stopCamera();
+            
+            forgeBtn.disabled = false;
+        });
+
+        function stopCamera() {
+            if (cameraStreamObj) {
+                cameraStreamObj.getTracks().forEach(track => track.stop());
+                cameraStreamObj = null;
+            }
+            cameraStream.style.display = 'none';
+            cameraOverlay.style.display = 'none';
+            dropzonePrompt.style.display = loadedBase64 ? 'none' : 'flex';
+        }
+
+        // Summon writers loop
+        forgeBtn.addEventListener('click', async () => {
+            if (!loadedBase64) return;
+            
+            resultsSection.style.display = 'none';
+            forgeBtn.disabled = true;
+            forgeBtn.innerText = "🔥 AGENTS THINKING...";
+            
+            // Reset comedians animation
+            const itemsCount = 6;
+            for (let i = 0; i < itemsCount; i++) {
+                const item = document.getElementById(`comedian-${i}`);
+                const status = document.getElementById(`status-${i}`);
+                const progress = document.getElementById(`progress-${i}`);
+                
+                item.classList.add('active');
+                status.innerText = "Writing... ✍️";
+                status.className = "comedian-status writing";
+                progress.style.width = "0%";
+            }
+
+            // Simulate typing progression in parallel
+            let simulatedProgress = 0;
+            const progressInterval = setInterval(() => {
+                simulatedProgress += Math.random() * 15;
+                if (simulatedProgress > 85) simulatedProgress = 85;
+                for (let i = 0; i < itemsCount; i++) {
+                    const progress = document.getElementById(`progress-${i}`);
+                    // Introduce slight variation for each comedian
+                    const val = Math.min(90, Math.round(simulatedProgress + (i * 2)));
+                    progress.style.width = `${val}%`;
+                }
+            }, 100);
+
+            try {
+                const response = await fetch('/api/forge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jpeg_b64: loadedBase64,
+                        topic: topicInput.value
+                    })
+                });
+
+                clearInterval(progressInterval);
+
+                if (!response.ok) {
+                    throw new Error("Failed to forge meme");
+                }
+
+                const data = await response.json();
+                
+                // Complete progress bar animation
+                for (let i = 0; i < itemsCount; i++) {
+                    const status = document.getElementById(`status-${i}`);
+                    const progress = document.getElementById(`progress-${i}`);
+                    status.innerText = "Done! ⚡";
+                    status.className = "comedian-status done";
+                    progress.style.width = "100%";
+                }
+
+                // Render metrics
+                valWriters.innerText = data.writers;
+                valTime.innerText = `${data.total_ms}ms`;
+                valSpeed.innerText = data.tokens_per_sec;
+
+                // Render meme grid
+                memeGrid.innerHTML = "";
+                data.top.forEach((m, idx) => {
+                    const card = document.createElement('div');
+                    card.className = "meme-card";
+                    card.innerHTML = `
+                        <div class="meme-image-container">
+                            <img src="data:image/jpeg;base64,${m.image_b64}" alt="Meme ${idx+1}">
+                        </div>
+                        <div class="meme-info">
+                            <span class="meme-score-badge">Rank #${idx+1} (Score: ${m.score})</span>
+                            <p class="meme-reason">💡 <em>${m.reason}</em></p>
+                            <button class="btn btn-primary" onclick="downloadMeme('${m.image_b64}', 'meme-${idx+1}.jpg')" style="width: 100%; font-size: 0.9rem; padding: 0.5rem;">
+                                📥 Download Image
+                            </button>
+                        </div>
+                    `;
+                    memeGrid.appendChild(card);
+                });
+
+                resultsSection.style.display = 'block';
+                // Smooth scroll to results
+                resultsSection.scrollIntoView({ behavior: 'smooth' });
+
+            } catch (err) {
+                console.error(err);
+                alert("Error crafting memes: " + err.message);
+                clearInterval(progressInterval);
+            } finally {
+                forgeBtn.disabled = false;
+                forgeBtn.innerText = "🔥 SUMMON WRITERS";
+                setTimeout(() => {
+                    for (let i = 0; i < itemsCount; i++) {
+                        const item = document.getElementById(`comedian-${i}`);
+                        item.classList.remove('active');
+                    }
+                }, 1000);
+            }
+        });
+
+        function downloadMeme(b64, filename) {
+            const link = document.createElement('a');
+            link.href = `data:image/jpeg;base64,${b64}`;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
