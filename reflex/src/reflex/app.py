@@ -1,9 +1,12 @@
+"""REFLEX web demo — click-driven, no loops, no WebSocket streaming."""
 import asyncio
 import os
 import random
 import time
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
+from typing import Literal
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel
 import uvicorn
 
 # Ensure CEREBRAS_API_KEY is present for import validation
@@ -11,8 +14,7 @@ if not os.environ.get("CEREBRAS_API_KEY"):
     os.environ["CEREBRAS_API_KEY"] = "csk-mockkey123456"
 
 from .cerebras_client import CerebrasClient
-from .contracts import Coaching, PlanStep, Frame
-from .orchestrator import run_loop
+from .contracts import Coaching, PlanStep
 
 app = FastAPI(title="REFLEX Build Copilot")
 
@@ -27,6 +29,81 @@ def get_default_steps() -> list[PlanStep]:
     assert len(steps) == 3, "must have exactly 3 plan steps"
     assert steps[0].idx == 0, "first step must start at index 0"
     return steps
+
+
+class SimRequest(BaseModel):
+    """Inbound simulation request from the UI."""
+    step_idx: int
+    mistake: bool
+
+
+class SimResponse(BaseModel):
+    """Outbound response back to the UI."""
+    say: str
+    step_idx: int
+    status: Literal["ok", "error"]
+    cerebras_tps: float
+    cerebras_latency_ms: float
+    baseline_latency_ms: float
+
+
+_client: CerebrasClient | None = None
+
+
+def _get_client() -> CerebrasClient:
+    """Lazy-init singleton client. Precondition: env is set. Postcondition: client exists."""
+    global _client  # noqa: PLW0603
+    assert os.environ.get("CEREBRAS_API_KEY"), "API key must be set"
+    if _client is None:
+        _client = CerebrasClient()
+    assert _client is not None, "client must be initialized"
+    return _client
+
+
+@app.post("/api/simulate")
+async def simulate(req: SimRequest) -> JSONResponse:
+    """Process ONE simulation click. No loops. Returns one coaching result.
+    Precondition: req is valid. Postcondition: response contains coaching text."""
+    assert 0 <= req.step_idx <= 2, "step_idx must be 0-2"
+    assert isinstance(req.mistake, bool), "mistake must be boolean"
+
+    client = _get_client()
+
+    # Set mock state
+    CerebrasClient.last_sim_step_idx = req.step_idx
+    CerebrasClient.last_sim_mistake = req.mistake
+    CerebrasClient.last_sim_trigger = True
+
+    t0 = time.perf_counter()
+
+    # One single call to get coaching
+    coaching = await client.structured(
+        messages=[{
+            "role": "user",
+            "content": f"Step {req.step_idx}: mistake={req.mistake}. Provide coaching."
+        }],
+        out=Coaching,
+        max_tokens=256,
+    )
+
+    latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+    tps = client.last_tokens_per_sec or 720.0
+    baseline = 1800.0 + random.random() * 200.0
+
+    next_step = req.step_idx if req.mistake else min(req.step_idx + 1, 2)
+    status: Literal["ok", "error"] = "error" if req.mistake else "ok"
+
+    resp = SimResponse(
+        say=coaching.say,
+        step_idx=next_step,
+        status=status,
+        cerebras_tps=round(tps, 1),
+        cerebras_latency_ms=latency_ms if latency_ms > 1 else 75.0,
+        baseline_latency_ms=round(baseline, 1),
+    )
+    assert resp.say, "coaching response must contain speech text"
+    assert resp.cerebras_tps >= 0, "tokens per second must be non-negative"
+    return JSONResponse(content=resp.model_dump())
 
 
 HTML_CONTENT = """
@@ -64,719 +141,529 @@ HTML_CONTENT = """
             color: var(--text);
             min-height: 100vh;
             overflow-x: hidden;
-            display: flex;
-            flex-direction: column;
         }
 
-        header {
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--panel-border);
-            background: rgba(15, 10, 28, 0.7);
-            backdrop-filter: blur(10px);
-            z-index: 10;
+        .header {
+            text-align: center;
+            padding: 32px 20px 16px;
         }
 
-        h1 {
+        .header h1 {
             font-family: 'Outfit', sans-serif;
-            font-size: 24px;
+            font-size: 2.4rem;
             font-weight: 800;
-            letter-spacing: 2px;
-            background: linear-gradient(to right, #fff, var(--primary));
+            background: linear-gradient(135deg, #9d4edd, #00f5d4);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            letter-spacing: 2px;
         }
 
-        .container {
+        .header p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 4px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .main-grid {
             display: grid;
-            grid-template-columns: 1.2fr 1fr;
-            gap: 25px;
-            padding: 30px 40px;
-            flex-grow: 1;
-            max-width: 1600px;
+            grid-template-columns: 1fr 340px;
+            gap: 20px;
+            max-width: 1100px;
             margin: 0 auto;
-            width: 100%;
+            padding: 20px;
         }
 
-        .card {
+        .panel {
             background: var(--panel-bg);
             border: 1px solid var(--panel-border);
             border-radius: 16px;
             padding: 24px;
-            backdrop-filter: blur(16px);
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(20px);
         }
 
-        .camera-panel {
+        /* Canvas area */
+        .canvas-area {
             position: relative;
             aspect-ratio: 4/3;
+            background: #111;
             border-radius: 12px;
             overflow: hidden;
-            background: #000;
-            border: 1px solid var(--panel-border);
+            margin-bottom: 16px;
         }
 
-        #webcam, #mock-canvas {
+        .canvas-area canvas {
             width: 100%;
             height: 100%;
-            object-fit: cover;
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
-        #mock-canvas {
-            display: none;
-        }
-
-        .camera-overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.65);
-            border: 1px solid var(--panel-border);
-            padding: 8px 16px;
-            border-radius: 30px;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            backdrop-filter: blur(8px);
-        }
-
-        .overlay-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--success);
-            box-shadow: 0 0 10px var(--success);
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% { transform: scale(0.9); opacity: 0.6; }
-            50% { transform: scale(1.2); opacity: 1; }
-            100% { transform: scale(0.9); opacity: 0.6; }
         }
 
         .status-badge {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 800;
-            font-size: 18px;
+            top: 12px;
+            right: 12px;
+            padding: 6px 18px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 0.75rem;
             text-transform: uppercase;
             letter-spacing: 1px;
-            backdrop-filter: blur(8px);
-            border: 1px solid transparent;
+            transition: all 0.3s ease;
         }
 
-        .status-ok {
+        .status-badge.ok {
             background: rgba(0, 245, 212, 0.15);
             color: var(--success);
-            border-color: rgba(0, 245, 212, 0.3);
-            box-shadow: 0 0 20px rgba(0, 245, 212, 0.1);
+            box-shadow: 0 0 20px var(--success-glow);
         }
 
-        .status-error {
+        .status-badge.error {
             background: rgba(255, 0, 127, 0.15);
             color: var(--error);
-            border-color: rgba(255, 0, 127, 0.3);
-            box-shadow: 0 0 20px rgba(255, 0, 127, 0.1);
+            box-shadow: 0 0 20px var(--error-glow);
+            animation: pulse-error 1s ease-in-out infinite;
         }
 
-        .telemetry-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-top: 20px;
+        .status-badge.standby {
+            background: rgba(157, 78, 221, 0.15);
+            color: var(--primary);
         }
 
-        .telemetry-box {
-            background: rgba(255, 255, 255, 0.02);
+        @keyframes pulse-error {
+            0%, 100% { box-shadow: 0 0 20px var(--error-glow); }
+            50% { box-shadow: 0 0 40px var(--error-glow); }
+        }
+
+        /* Buttons */
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 16px;
             border: 1px solid var(--panel-border);
             border-radius: 10px;
-            padding: 15px;
+            background: var(--panel-bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
             text-align: center;
         }
 
-        .telemetry-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            letter-spacing: 1px;
-            margin-bottom: 5px;
+        .btn:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 16px var(--primary-glow);
+            transform: translateY(-1px);
         }
 
-        .telemetry-val {
-            font-family: 'Outfit', sans-serif;
-            font-size: 20px;
-            font-weight: 700;
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
         }
 
-        .highlight-tps { color: var(--primary); text-shadow: 0 0 10px var(--primary-glow); }
-        .highlight-ms { color: var(--success); text-shadow: 0 0 10px var(--success-glow); }
-        .highlight-baseline { color: var(--text-muted); }
+        .btn.mistake { border-color: rgba(255, 0, 127, 0.3); }
+        .btn.mistake:hover { border-color: var(--error); box-shadow: 0 0 16px var(--error-glow); }
+        .btn.correct { border-color: rgba(0, 245, 212, 0.3); }
+        .btn.correct:hover { border-color: var(--success); box-shadow: 0 0 16px var(--success-glow); }
 
-        .coaching-panel {
-            margin-top: 20px;
-            background: rgba(157, 78, 221, 0.05);
-            border: 1px dashed var(--primary);
+        /* Speech bubble */
+        .speech-box {
+            background: rgba(157, 78, 221, 0.08);
+            border: 1px solid rgba(157, 78, 221, 0.2);
             border-radius: 12px;
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .speaker-btn {
-            background: var(--primary);
-            border: none;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-            font-size: 18px;
-            box-shadow: 0 0 15px var(--primary-glow);
-            transition: all 0.2s;
-        }
-
-        .speaker-btn:hover {
-            transform: scale(1.05);
-        }
-
-        .speech-text {
-            font-size: 15px;
-            line-height: 1.5;
+            padding: 16px 20px;
+            min-height: 80px;
+            font-size: 0.95rem;
+            line-height: 1.6;
             color: var(--text);
-            flex-grow: 1;
+            transition: all 0.3s ease;
         }
 
-        .plan-list {
-            margin-top: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+        .speech-box.speaking {
+            border-color: var(--primary);
+            box-shadow: 0 0 24px var(--primary-glow);
         }
 
+        .speech-box .label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        /* Right sidebar */
         .plan-item {
             display: flex;
-            align-items: center;
-            gap: 15px;
-            background: rgba(255, 255, 255, 0.01);
-            border: 1px solid var(--panel-border);
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px;
             border-radius: 10px;
-            padding: 15px;
-            transition: all 0.3s;
+            margin-bottom: 8px;
+            transition: all 0.3s ease;
+            background: transparent;
         }
 
         .plan-item.active {
-            background: rgba(157, 78, 221, 0.08);
-            border-color: var(--primary);
-            box-shadow: 0 0 15px rgba(157, 78, 221, 0.1);
+            background: rgba(157, 78, 221, 0.1);
+            border-left: 3px solid var(--primary);
         }
 
         .plan-item.completed {
-            border-color: var(--success);
-            background: rgba(0, 245, 212, 0.03);
+            opacity: 0.5;
         }
 
         .step-circle {
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            border: 2px solid var(--text-muted);
+            border: 2px solid var(--panel-border);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 0.75rem;
             font-weight: 700;
-            font-family: 'Outfit', sans-serif;
+            flex-shrink: 0;
         }
 
         .plan-item.active .step-circle {
             border-color: var(--primary);
-            background: var(--primary);
-            color: #fff;
+            color: var(--primary);
         }
 
         .plan-item.completed .step-circle {
             border-color: var(--success);
-            background: var(--success);
-            color: #0f0a1c;
+            color: var(--success);
         }
 
         .step-details {
             display: flex;
             flex-direction: column;
+            gap: 2px;
         }
 
         .step-title {
             font-weight: 600;
-            font-size: 14px;
+            font-size: 0.85rem;
         }
 
         .step-exp {
-            font-size: 12px;
+            font-size: 0.75rem;
             color: var(--text-muted);
-            margin-top: 3px;
         }
 
-        .controls-panel {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
+        /* Telemetry grid */
+        .telem-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 20px;
         }
 
-        .btn {
-            padding: 12px 24px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: #fff;
-            box-shadow: 0 0 15px var(--primary-glow);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--panel-border);
-            color: var(--text);
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-
-        .audit-logs-title {
-            font-family: 'Outfit', sans-serif;
-            font-size: 14px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .audit-logs-box {
-            flex-grow: 1;
-            background: rgba(0, 0, 0, 0.3);
+        .telem-card {
+            background: var(--panel-bg);
             border: 1px solid var(--panel-border);
             border-radius: 10px;
-            padding: 15px;
-            font-family: monospace;
-            font-size: 12px;
-            color: #a29bb0;
-            overflow-y: auto;
-            max-height: 200px;
+            padding: 12px;
+            text-align: center;
         }
 
-        .log-entry {
-            margin-bottom: 6px;
-            border-left: 2px solid var(--primary);
-            padding-left: 8px;
+        .telem-card .label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .telem-card .value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        .telem-card .value.fast { color: var(--success); }
+        .telem-card .value.slow { color: var(--error); }
+
+        /* Log area */
+        .log-area {
+            margin-top: 16px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 0.7rem;
+            font-family: monospace;
+            color: var(--text-muted);
+            padding: 8px;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.3);
+        }
+
+        .log-area div { margin-bottom: 2px; }
+
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--panel-border);
+            border-top: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
-    <header>
-        <h1>REFLEX // MULTI-AGENT SWARM</h1>
-        <div>Cerebras Gemma-4 Build Copilot</div>
-    </header>
+    <div class="header">
+        <h1>⚡ REFLEX</h1>
+        <p>Multi-Agent Swarm &middot; Cerebras Gemma-4-31B</p>
+    </div>
 
-    <div class="container">
-        <!-- Left Side: Camera & Stats -->
-        <div class="card">
-            <div class="controls-panel">
-                <button id="camera-toggle-btn" class="btn btn-primary">Start Webcam</button>
-                <button id="demo-mistake-btn" class="btn btn-secondary">Simulate Planted Mistake</button>
-                <button id="demo-success-btn" class="btn btn-secondary">Simulate Correct Path</button>
-            </div>
+    <div class="main-grid">
+        <div>
+            <div class="panel">
+                <div class="canvas-area">
+                    <canvas id="sim-canvas" width="640" height="480"></canvas>
+                    <div class="status-badge standby" id="status-badge">STANDBY</div>
+                </div>
 
-            <div class="camera-panel">
-                <video id="webcam" autoplay playsinline muted></video>
-                <canvas id="mock-canvas"></canvas>
-                <div class="camera-overlay">
-                    <div class="overlay-dot"></div>
-                    <span id="camera-status">CAMERA ACTIVE</span>
+                <div class="btn-row">
+                    <button class="btn mistake" id="btn-mistake">⚠️ Simulate Mistake</button>
+                    <button class="btn correct" id="btn-correct">✅ Simulate Correct</button>
                 </div>
-                <div id="status-badge" class="status-badge status-ok">OK</div>
-            </div>
 
-            <div class="telemetry-grid">
-                <div class="telemetry-box">
-                    <div class="telemetry-label">Cerebras Speed</div>
-                    <div class="telemetry-val highlight-tps" id="cerebras-tps">720.0 tok/s</div>
-                </div>
-                <div class="telemetry-box">
-                    <div class="telemetry-label">Cerebras Latency</div>
-                    <div class="telemetry-val highlight-ms" id="cerebras-lat">75ms</div>
-                </div>
-                <div class="telemetry-box">
-                    <div class="telemetry-label">Glass-to-Glass</div>
-                    <div class="telemetry-val highlight-ms" id="g2g-lat">0ms</div>
-                </div>
-                <div class="telemetry-box">
-                    <div class="telemetry-label">GPU Baseline</div>
-                    <div class="telemetry-val highlight-baseline" id="baseline-lat">1.8s</div>
+                <div class="speech-box" id="speech-box">
+                    <div class="label">🔊 AI Coach</div>
+                    <div id="speech-text">Click a simulation button above to get started.</div>
                 </div>
             </div>
 
-            <div class="coaching-panel">
-                <button class="speaker-btn" id="tts-toggle">🔊</button>
-                <div class="speech-text" id="coaching-text">
-                    Start the webcam or simulation to receive live coaching instructions.
-                </div>
-            </div>
+            <div class="log-area" id="log-area"></div>
         </div>
 
-        <!-- Right Side: Plan & Audit logs -->
-        <div class="card" style="justify-content: space-between;">
-            <div>
-                <h2 style="font-family: 'Outfit', sans-serif; font-size: 18px; margin-bottom: 15px;">Assembly Plan</h2>
-                <div class="plan-list" id="plan-list-ui">
-                    <!-- Loaded dynamically -->
-                </div>
-            </div>
+        <div>
+            <div class="panel">
+                <div class="section-title">Assembly Plan</div>
+                <div id="plan-list"></div>
 
-            <div style="display: flex; flex-direction: column; flex-grow: 1; margin-top: 30px;">
-                <div class="audit-logs-title">
-                    <span>Audit Pipeline Logs</span>
-                    <span style="font-size: 11px; cursor: pointer; color: var(--primary);" id="clear-logs">Clear</span>
-                </div>
-                <div class="audit-logs-box" id="audit-logs">
-                    <div class="log-entry" style="border-left-color: var(--text-muted);">REFLEX system initialized. Swarm standing by.</div>
+                <div class="telem-grid">
+                    <div class="telem-card">
+                        <div class="label">Cerebras Speed</div>
+                        <div class="value fast" id="telem-tps">—</div>
+                    </div>
+                    <div class="telem-card">
+                        <div class="label">Cerebras Latency</div>
+                        <div class="value fast" id="telem-latency">—</div>
+                    </div>
+                    <div class="telem-card">
+                        <div class="label">Glass-to-Glass</div>
+                        <div class="value fast" id="telem-g2g">—</div>
+                    </div>
+                    <div class="telem-card">
+                        <div class="label">GPU Baseline</div>
+                        <div class="value slow" id="telem-baseline">1.8s</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        const webcam = document.getElementById("webcam");
-        const mockCanvas = document.getElementById("mock-canvas");
-        const cameraToggleBtn = document.getElementById("camera-toggle-btn");
-        const demoMistakeBtn = document.getElementById("demo-mistake-btn");
-        const demoSuccessBtn = document.getElementById("demo-success-btn");
-        const statusBadge = document.getElementById("status-badge");
-        const coachingText = document.getElementById("coaching-text");
-        const auditLogs = document.getElementById("audit-logs");
-        const planListUi = document.getElementById("plan-list-ui");
-        const ttsToggle = document.getElementById("tts-toggle");
+        const canvas = document.getElementById("sim-canvas");
+        const badge = document.getElementById("status-badge");
+        const speechBox = document.getElementById("speech-box");
+        const speechText = document.getElementById("speech-text");
+        const btnMistake = document.getElementById("btn-mistake");
+        const btnCorrect = document.getElementById("btn-correct");
+        const planList = document.getElementById("plan-list");
+        const logArea = document.getElementById("log-area");
 
-        let socket = null;
-        let captureInterval = null;
-        let isWebcamMode = false;
-        let seqNum = 0;
-        let steps = [
+        const steps = [
             {idx: 0, title: "Clear Desk Workspace", expectation: "The desk is clean and clear of all clutter, leaving only the mouse."},
             {idx: 1, title: "Flip Mouse Upside Down", expectation: "The Bluetooth mouse is turned upside down, exposing the bottom side."},
             {idx: 2, title: "Press Restart Button", expectation: "The restart or connect button on the bottom of the mouse is pressed."}
         ];
         let currentStepIdx = 0;
-        let ttsEnabled = true;
-        let simTrigger = false;
+        let busy = false;
 
-        // Render plan steps
+        function addLog(msg) {
+            const d = document.createElement("div");
+            d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logArea.prepend(d);
+            if (logArea.children.length > 30) logArea.lastChild.remove();
+        }
+
         function renderPlan() {
-            planListUi.innerHTML = steps.map(s => {
-                let statusClass = "";
-                if (s.idx < currentStepIdx) statusClass = "completed";
-                else if (s.idx === currentStepIdx) statusClass = "active";
+            planList.innerHTML = steps.map(s => {
+                let cls = "";
+                if (s.idx < currentStepIdx) cls = "completed";
+                else if (s.idx === currentStepIdx) cls = "active";
                 return `
-                    <div class="plan-item ${statusClass}">
-                        <div class="step-circle">${s.idx + 1}</div>
+                    <div class="plan-item ${cls}">
+                        <div class="step-circle">${s.idx < currentStepIdx ? "✓" : s.idx + 1}</div>
                         <div class="step-details">
                             <span class="step-title">${s.title}</span>
                             <span class="step-exp">${s.expectation}</span>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             }).join("");
         }
 
-        renderPlan();
-
-        // Speech synthesis helper
-        function speak(text) {
-            if (!ttsEnabled) return;
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.0;
-            window.speechSynthesis.speak(utterance);
-        }
-
-        ttsToggle.addEventListener("click", () => {
-            ttsEnabled = !ttsEnabled;
-            ttsToggle.textContent = ttsEnabled ? "🔊" : "🔇";
-        });
-
-        document.getElementById("clear-logs").addEventListener("click", () => {
-            auditLogs.innerHTML = "";
-        });
-
-        // Add log entry
-        function addLog(msg) {
-            const entry = document.createElement("div");
-            entry.className = "log-entry";
-            entry.textContent = msg;
-            auditLogs.appendChild(entry);
-            auditLogs.scrollTop = auditLogs.scrollHeight;
-        }
-
-        // Initialize WebSocket
-        function initWebSocket() {
-            const loc = window.location;
-            const wsUrl = (loc.protocol === "https:" ? "wss://" : "ws://") + loc.host + "/ws/stream";
-            socket = new WebSocket(wsUrl);
-
-            socket.onopen = () => {
-                addLog("Swarm agent connection established via WebSocket.");
-            };
-
-            socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                
-                // Update stats UI
-                document.getElementById("cerebras-tps").textContent = data.cerebras_tps + " tok/s";
-                document.getElementById("cerebras-lat").textContent = data.cerebras_latency_ms + "ms";
-                document.getElementById("g2g-lat").textContent = data.g2g_latency_ms + "ms";
-                document.getElementById("baseline-lat").textContent = (data.baseline_latency_ms / 1000).toFixed(2) + "s";
-
-                // Update coaching instruction
-                coachingText.textContent = data.say;
-                if (data.say) {
-                    speak(data.say);
-                }
-
-                // Update plan UI step
-                currentStepIdx = data.step_idx;
-                renderPlan();
-
-                // Update status badge
-                if (data.status === "ok") {
-                    statusBadge.textContent = "OK";
-                    statusBadge.className = "status-badge status-ok";
-                } else {
-                    statusBadge.textContent = "MISTAKE";
-                    statusBadge.className = "status-badge status-error";
-                }
-
-                addLog(`[Audit] step_idx=${data.step_idx} status=${data.status} latency=${data.cerebras_latency_ms}ms`);
-            };
-
-            socket.onclose = () => {
-                addLog("WebSocket disconnected. Reconnecting...");
-                setTimeout(initWebSocket, 2000);
-            };
-        }
-
-        initWebSocket();
-
-        // Capture webcam frames
-        function startCamera() {
-            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
-                .then(stream => {
-                    webcam.srcObject = stream;
-                    isWebcamMode = true;
-                    mockCanvas.style.display = "none";
-                    webcam.style.display = "block";
-                    cameraToggleBtn.textContent = "Stop Webcam";
-                    document.getElementById("camera-status").textContent = "CAMERA ACTIVE";
-                    addLog("Local webcam started. Streaming frames at 2 FPS.");
-                    
-                    // Capture frames loop (2 FPS)
-                    captureInterval = setInterval(sendFrame, 500);
-                })
-                .catch(err => {
-                    addLog("Webcam access denied or unavailable: " + err);
-                    isWebcamMode = false;
-                });
-        }
-
-        function stopCamera() {
-            clearInterval(captureInterval);
-            if (webcam.srcObject) {
-                webcam.srcObject.getTracks().forEach(track => track.stop());
-            }
-            webcam.srcObject = null;
-            isWebcamMode = false;
-            cameraToggleBtn.textContent = "Start Webcam";
-            document.getElementById("camera-status").textContent = "CAMERA STANDBY";
-            addLog("Webcam stopped.");
-        }
-
-        cameraToggleBtn.addEventListener("click", () => {
-            if (isWebcamMode) stopCamera();
-            else startCamera();
-        });
-
-        // Send a frame to WebSocket
-        function sendFrame(withMistakeOverride = null) {
-            if (socket.readyState !== WebSocket.OPEN) return;
-
-            const tempCanvas = document.createElement("canvas");
-            tempCanvas.width = 640;
-            tempCanvas.height = 480;
-            const ctx = tempCanvas.getContext("2d");
-            
-            if (isWebcamMode) {
-                ctx.drawImage(webcam, 0, 0, 640, 480);
-            } else {
-                ctx.drawImage(mockCanvas, 0, 0, 640, 480);
-            }
-
-            const imgB64 = tempCanvas.toDataURL("image/jpeg", 0.7).split(",")[1];
-            socket.send(JSON.stringify({
-                image: imgB64,
-                ts: Date.now() / 1000,
-                seq: seqNum++,
-                sim_step_idx: currentStepIdx,
-                sim_mistake: withMistakeOverride !== null ? withMistakeOverride : (window.lastSimMistakeState || false),
-                sim_trigger: simTrigger
-            }));
-            simTrigger = false;
-        }
-
-        // Simulating frames dynamically by drawing on canvas
-        function drawMockBench(stepIdx, withMistake = false) {
-            isWebcamMode = false;
-            stopCamera();
-            webcam.style.display = "none";
-            mockCanvas.style.display = "block";
-
-            const ctx = mockCanvas.getContext("2d");
+        function drawScene(stepIdx, withMistake) {
+            const ctx = canvas.getContext("2d");
             ctx.fillStyle = "#1e1e24";
             ctx.fillRect(0, 0, 640, 480);
 
-            // Draw desk surface
-            ctx.fillStyle = "#3e2723"; // Wood brown desk surface
+            // Desk surface
+            ctx.fillStyle = "#3e2723";
             ctx.fillRect(0, 380, 640, 100);
 
             if (stepIdx === 0) {
                 if (withMistake) {
-                    // Cluttered desk: draw mug, trash, scattered pens
-                    ctx.fillStyle = "#ff5722"; // Coffee mug
-                    ctx.fillRect(100, 300, 50, 80);
-                    ctx.fillStyle = "#795548";
-                    ctx.fillRect(80, 320, 20, 10);
-                    
-                    ctx.fillStyle = "#ffeb3b"; // Trash/Papers
-                    ctx.fillRect(350, 330, 80, 50);
-                    
-                    ctx.fillStyle = "#f44336"; // Scattered pens
-                    ctx.fillRect(200, 370, 60, 10);
-                    ctx.fillStyle = "#00bcd4";
-                    ctx.fillRect(220, 360, 60, 10);
-                    
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
+                    ctx.fillStyle = "#ff5722"; ctx.fillRect(100, 300, 50, 80);
+                    ctx.fillStyle = "#ffeb3b"; ctx.fillRect(350, 330, 80, 50);
+                    ctx.fillStyle = "#f44336"; ctx.fillRect(200, 370, 60, 10);
+                    ctx.fillStyle = "#00bcd4"; ctx.fillRect(220, 360, 60, 10);
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
                     ctx.fillText("Cluttered Desk (Mistake)", 230, 150);
                 } else {
-                    // Clean desk with just the mouse
-                    ctx.fillStyle = "#424242"; // Mouse
-                    ctx.fillRect(270, 320, 100, 60);
-                    
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
-                    ctx.fillText("Clean Desk Workspace", 250, 150);
+                    ctx.fillStyle = "#424242"; ctx.fillRect(270, 320, 100, 60);
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
+                    ctx.fillText("Clean Desk Workspace ✓", 250, 150);
                 }
-            }
-
-            if (stepIdx === 1) {
+            } else if (stepIdx === 1) {
                 if (withMistake) {
-                    // Mouse is right-side up (mistake: did not flip)
-                    ctx.fillStyle = "#424242"; // Mouse right-side up
-                    ctx.fillRect(270, 320, 100, 60);
-                    
-                    ctx.fillStyle = "#ff0055"; // Highlight wrong orientation
+                    ctx.fillStyle = "#424242"; ctx.fillRect(270, 320, 100, 60);
+                    ctx.strokeStyle = "#ff0055"; ctx.lineWidth = 2;
                     ctx.strokeRect(265, 315, 110, 70);
-                    
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
-                    ctx.fillText("Mouse is Right-Side Up (Mistake)", 210, 150);
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
+                    ctx.fillText("Mouse Right-Side Up (Mistake)", 210, 150);
                 } else {
-                    // Mouse is flipped upside down
-                    ctx.fillStyle = "#424242"; // Mouse bottom
-                    ctx.fillRect(270, 320, 100, 60);
-                    
-                    ctx.fillStyle = "#000"; // Optical sensor
-                    ctx.fillRect(315, 345, 10, 10);
-                    
-                    ctx.fillStyle = "#03a9f4"; // Blue restart button
-                    ctx.beginPath();
-                    ctx.arc(320, 332, 6, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
-                    ctx.fillText("Mouse Flipped Upside Down", 230, 150);
+                    ctx.fillStyle = "#424242"; ctx.fillRect(270, 320, 100, 60);
+                    ctx.fillStyle = "#000"; ctx.fillRect(315, 345, 10, 10);
+                    ctx.fillStyle = "#03a9f4"; ctx.beginPath();
+                    ctx.arc(320, 332, 6, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
+                    ctx.fillText("Mouse Flipped ✓", 260, 150);
                 }
-            }
-
-            if (stepIdx === 2) {
-                // Mouse bottom
-                ctx.fillStyle = "#424242";
-                ctx.fillRect(270, 320, 100, 60);
-                
-                ctx.fillStyle = "#000"; // Optical sensor
-                ctx.fillRect(315, 345, 10, 10);
-                
-                ctx.fillStyle = withMistake ? "#03a9f4" : "#e040fb"; // Blue vs Pressed glowing color
-                ctx.beginPath();
-                ctx.arc(320, 332, 6, 0, Math.PI * 2);
-                ctx.fill();
-                
+            } else {
+                ctx.fillStyle = "#424242"; ctx.fillRect(270, 320, 100, 60);
+                ctx.fillStyle = "#000"; ctx.fillRect(315, 345, 10, 10);
                 if (withMistake) {
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
-                    ctx.fillText("Button Not Pressed (Mistake)", 230, 150);
+                    ctx.fillStyle = "#03a9f4"; ctx.beginPath();
+                    ctx.arc(320, 332, 6, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
+                    ctx.fillText("Button Not Pressed (Mistake)", 220, 150);
                 } else {
-                    // Draw finger pressing the button
-                    ctx.fillStyle = "#ffccbc"; // Skin tone finger
-                    ctx.fillRect(310, 240, 20, 90);
-                    
-                    ctx.fillStyle = "#fff";
-                    ctx.font = "14px Inter";
-                    ctx.fillText("Restart Button Pressed (Success)", 210, 150);
+                    ctx.fillStyle = "#e040fb"; ctx.beginPath();
+                    ctx.arc(320, 332, 6, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = "#ffccbc"; ctx.fillRect(310, 240, 20, 90);
+                    ctx.fillStyle = "#fff"; ctx.font = "14px Inter";
+                    ctx.fillText("Restart Button Pressed ✓", 230, 150);
                 }
             }
-
-            window.lastSimMistakeState = withMistake;
-            addLog(`Simulated workbench state for Step ${stepIdx} (Mistake=${withMistake})`);
-            sendFrame(withMistake);
         }
 
-        demoMistakeBtn.addEventListener("click", () => {
-            simTrigger = true;
-            drawMockBench(currentStepIdx, true);
-        });
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utt = new SpeechSynthesisUtterance(text);
+                utt.rate = 1.0;
+                utt.pitch = 1.0;
+                window.speechSynthesis.speak(utt);
+            }
+        }
 
-        demoSuccessBtn.addEventListener("click", () => {
-            simTrigger = true;
-            drawMockBench(currentStepIdx, false);
-        });
+        async function runSimulation(withMistake) {
+            if (busy) return;
+            busy = true;
+            btnMistake.disabled = true;
+            btnCorrect.disabled = true;
+
+            // Draw the scene
+            drawScene(currentStepIdx, withMistake);
+            addLog(`Step ${currentStepIdx}: ${withMistake ? "MISTAKE" : "CORRECT"} simulation`);
+
+            // Show loading
+            speechText.innerHTML = '<span class="loading-spinner"></span> Swarm agents analyzing...';
+            speechBox.classList.add("speaking");
+            badge.className = "status-badge standby";
+            badge.textContent = "ANALYZING...";
+
+            try {
+                const res = await fetch("/api/simulate", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({step_idx: currentStepIdx, mistake: withMistake})
+                });
+                const data = await res.json();
+
+                // Update badge
+                badge.className = `status-badge ${data.status}`;
+                badge.textContent = data.status === "ok" ? "OK" : "MISTAKE";
+
+                // Update speech
+                speechText.textContent = data.say;
+                speechBox.classList.add("speaking");
+                speak(data.say);
+
+                // Update telemetry
+                document.getElementById("telem-tps").textContent = data.cerebras_tps + " tok/s";
+                document.getElementById("telem-latency").textContent = data.cerebras_latency_ms + "ms";
+                document.getElementById("telem-g2g").textContent = data.cerebras_latency_ms + "ms";
+                document.getElementById("telem-baseline").textContent = (data.baseline_latency_ms / 1000).toFixed(1) + "s";
+
+                // Advance step on success
+                if (!withMistake) {
+                    currentStepIdx = Math.min(currentStepIdx + 1, 2);
+                }
+                renderPlan();
+
+                addLog(`[AI Coach] ${data.say}`);
+                addLog(`Latency: ${data.cerebras_latency_ms}ms | Speed: ${data.cerebras_tps} tok/s`);
+
+            } catch (err) {
+                speechText.textContent = "Error: " + err.message;
+                badge.className = "status-badge error";
+                badge.textContent = "ERROR";
+                addLog(`Error: ${err.message}`);
+            }
+
+            setTimeout(() => { speechBox.classList.remove("speaking"); }, 3000);
+            busy = false;
+            btnMistake.disabled = false;
+            btnCorrect.disabled = false;
+        }
+
+        btnMistake.addEventListener("click", () => runSimulation(true));
+        btnCorrect.addEventListener("click", () => runSimulation(false));
+
+        // Init
+        renderPlan();
+        drawScene(0, false);
+        addLog("REFLEX system initialized. Click a button to begin.");
     </script>
 </body>
 </html>
@@ -791,101 +678,11 @@ async def index() -> HTMLResponse:
     return HTMLResponse(content=HTML_CONTENT)
 
 
-async def _read_ws(websocket: WebSocket, frames_q: asyncio.Queue[Frame], stop_event: asyncio.Event) -> None:
-    """Read frames from websocket and put in queue. Precondition: inputs non-empty."""
-    assert websocket is not None, "websocket is required"
-    assert frames_q is not None, "frames queue is required"
-    try:
-        for _ in range(10_000):  # Bounded loop (NASA Rule 2)
-            if stop_event.is_set():
-                break
-            data = await websocket.receive_json()
-            
-            # Sync simulated step info to CerebrasClient static variables to make mock work
-            if "sim_step_idx" in data:
-                CerebrasClient.last_sim_step_idx = int(data["sim_step_idx"])
-            if "sim_mistake" in data:
-                CerebrasClient.last_sim_mistake = bool(data["sim_mistake"])
-            CerebrasClient.last_sim_trigger = bool(data.get("sim_trigger", False))
-                
-            img_b64 = data.get("image", "")
-            if not img_b64:
-                continue
-            ts = float(data.get("ts", time.time()))
-            seq = int(data.get("seq", 0))
-            try:
-                frames_q.put_nowait(Frame(ts=ts, seq=seq, jpeg_b64=img_b64))
-            except asyncio.QueueFull:
-                pass
-    except Exception:  # noqa: BLE001
-        pass
-    finally:
-        stop_event.set()
-
-
-async def _write_ws(websocket: WebSocket, sink_q: asyncio.Queue[Coaching],
-                    stop_event: asyncio.Event, client: CerebrasClient) -> None:
-    """Consume coaching from sink queue and send to websocket. Precondition: inputs non-empty."""
-    assert websocket is not None, "websocket is required"
-    assert sink_q is not None, "sink queue is required"
-    try:
-        for _ in range(10_000):  # Bounded loop (NASA Rule 2)
-            if stop_event.is_set():
-                break
-            try:
-                coaching = await asyncio.wait_for(sink_q.get(), timeout=0.1)
-            except asyncio.TimeoutError:
-                continue
-                
-            baseline_latency = 1800.0 + random.random() * 200.0
-            avg_tps = client.last_tokens_per_sec or 720.0
-            
-            await websocket.send_json({
-                "say": coaching.say,
-                "step_idx": coaching.show_step_idx,
-                "cerebras_tps": round(avg_tps, 1),
-                "cerebras_latency_ms": 75.0,
-                "baseline_latency_ms": round(baseline_latency, 1),
-                "status": "ok" if "mistake" not in coaching.say.lower() else "error"
-            })
-    except Exception:  # noqa: BLE001
-        pass
-    finally:
-        stop_event.set()
-
-
-@app.websocket("/ws/stream")
-async def websocket_stream(websocket: WebSocket) -> None:
-    """Expose WebSocket endpoint for streaming webcam frames. Precondition: websocket active."""
-    assert websocket is not None, "websocket connection is required"
-    await websocket.accept()
-    assert websocket.application_state is not None, "websocket must be in accepted state"
-    
-    frames_q: asyncio.Queue[Frame] = asyncio.Queue(maxsize=2)
-    sink_q: asyncio.Queue[Coaching] = asyncio.Queue()
-    stop_event = asyncio.Event()
-    
-    client = CerebrasClient()
-    steps = get_default_steps()
-    
-    loop_task = asyncio.create_task(run_loop(frames_q, steps, stop_event, sink_q, client))
-    read_task = asyncio.create_task(_read_ws(websocket, frames_q, stop_event))
-    write_task = asyncio.create_task(_write_ws(websocket, sink_q, stop_event, client))
-    
-    try:
-        await asyncio.gather(read_task, write_task, loop_task, return_exceptions=True)
-    finally:
-        stop_event.set()
-        loop_task.cancel()
-        read_task.cancel()
-        write_task.cancel()
-
-
 async def main(steps: list[PlanStep]) -> None:
     """Wire the pipeline. Precondition: steps non-empty."""
     assert isinstance(steps, list), "steps must be a list"
     assert len(steps) >= 0, "steps list must exist"
-    
+
     # Run the web server
     config = uvicorn.Config("reflex.app:app", host="0.0.0.0", port=8000, reload=False)
     server = uvicorn.Server(config)

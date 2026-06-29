@@ -19,12 +19,24 @@ def test_index_route() -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert "REFLEX" in response.text
-    assert "MULTI-AGENT SWARM" in response.text
+    assert "MULTI-AGENT SWARM" in response.text.upper()
 
 
-def test_websocket_connection_handshake() -> None:
+def test_simulate_correct() -> None:
     client = TestClient(app)
-    # Validate we can connect and perform handshake
-    with client.websocket_connect("/ws/stream") as websocket:
-        # Just establish connection and close immediately
-        assert websocket is not None
+    response = client.post("/api/simulate", json={"step_idx": 0, "mistake": False})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert len(data["say"]) > 0
+    assert data["step_idx"] == 1
+
+
+def test_simulate_mistake() -> None:
+    client = TestClient(app)
+    response = client.post("/api/simulate", json={"step_idx": 1, "mistake": True})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert len(data["say"]) > 0
+    assert data["step_idx"] == 1
