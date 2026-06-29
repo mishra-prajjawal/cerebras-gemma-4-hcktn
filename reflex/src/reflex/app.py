@@ -20,9 +20,9 @@ app = FastAPI(title="REFLEX Build Copilot")
 def get_default_steps() -> list[PlanStep]:
     """Get default plan steps. Precondition: none. Postcondition: 3 steps returned."""
     steps = [
-        PlanStep(idx=0, title="Insert Blue Battery Pack", expectation="A blue battery pack is visible on the left side of the bench."),
-        PlanStep(idx=1, title="Connect Red Positive Wire", expectation="The red wire is connected to the positive terminal of the battery."),
-        PlanStep(idx=2, title="Secure Cover with Bolt", expectation="The black protective cover is on and the screw bolt is tightened.")
+        PlanStep(idx=0, title="Clear Desk Workspace", expectation="The desk is clean and clear of all clutter, leaving only the mouse."),
+        PlanStep(idx=1, title="Flip Mouse Upside Down", expectation="The Bluetooth mouse is turned upside down, exposing the bottom side."),
+        PlanStep(idx=2, title="Press Restart Button", expectation="The restart or connect button on the bottom of the mouse is pressed.")
     ]
     assert len(steps) == 3, "must have exactly 3 plan steps"
     assert steps[0].idx == 0, "first step must start at index 0"
@@ -490,9 +490,9 @@ HTML_CONTENT = """
         let isWebcamMode = false;
         let seqNum = 0;
         let steps = [
-            {idx: 0, title: "Insert Blue Battery Pack", expectation: "A blue battery pack is visible on the left side of the bench."},
-            {idx: 1, title: "Connect Red Positive Wire", expectation: "The red wire is connected to the positive terminal of the battery."},
-            {idx: 2, title: "Secure Cover with Bolt", expectation: "The black protective cover is on and the screw bolt is tightened."}
+            {idx: 0, title: "Clear Desk Workspace", expectation: "The desk is clean and clear of all clutter, leaving only the mouse."},
+            {idx: 1, title: "Flip Mouse Upside Down", expectation: "The Bluetooth mouse is turned upside down, exposing the bottom side."},
+            {idx: 2, title: "Press Restart Button", expectation: "The restart or connect button on the bottom of the mouse is pressed."}
         ];
         let currentStepIdx = 0;
         let ttsEnabled = true;
@@ -662,50 +662,100 @@ HTML_CONTENT = """
             mockCanvas.style.display = "block";
 
             const ctx = mockCanvas.getContext("2d");
-            ctx.fillStyle = "#333";
+            ctx.fillStyle = "#1e1e24";
             ctx.fillRect(0, 0, 640, 480);
 
-            // Draw bench items
-            ctx.fillStyle = "#666";
-            ctx.fillRect(50, 400, 540, 40); // Workbench base
+            // Draw desk surface
+            ctx.fillStyle = "#3e2723"; // Wood brown desk surface
+            ctx.fillRect(0, 380, 640, 100);
 
-            if (stepIdx >= 0) {
-                // Battery pack
-                ctx.fillStyle = "#007fff";
-                ctx.fillRect(100, 300, 100, 60);
-                ctx.fillStyle = "#fff";
-                ctx.font = "14px Inter";
-                ctx.fillText("Battery Pack", 110, 335);
+            if (stepIdx === 0) {
+                if (withMistake) {
+                    // Cluttered desk: draw mug, trash, scattered pens
+                    ctx.fillStyle = "#ff5722"; // Coffee mug
+                    ctx.fillRect(100, 300, 50, 80);
+                    ctx.fillStyle = "#795548";
+                    ctx.fillRect(80, 320, 20, 10);
+                    
+                    ctx.fillStyle = "#ffeb3b"; // Trash/Papers
+                    ctx.fillRect(350, 330, 80, 50);
+                    
+                    ctx.fillStyle = "#f44336"; // Scattered pens
+                    ctx.fillRect(200, 370, 60, 10);
+                    ctx.fillStyle = "#00bcd4";
+                    ctx.fillRect(220, 360, 60, 10);
+                    
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Cluttered Desk (Mistake)", 230, 150);
+                } else {
+                    // Clean desk with just the mouse
+                    ctx.fillStyle = "#424242"; // Mouse
+                    ctx.fillRect(270, 320, 100, 60);
+                    
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Clean Desk Workspace", 250, 150);
+                }
             }
 
-            if (stepIdx >= 1) {
-                // Red wire
-                ctx.strokeStyle = withMistake ? "#00f5d4" : "#ff007f"; // Green instead of Red wire mistake
-                ctx.lineWidth = 6;
-                ctx.beginPath();
-                ctx.moveTo(150, 300);
-                ctx.bezierCurveTo(200, 200, 300, 200, 350, 320);
-                ctx.stroke();
-
-                ctx.fillStyle = withMistake ? "#00f5d4" : "#ff007f";
-                ctx.font = "12px Inter";
-                ctx.fillText(withMistake ? "Green Wire (Wrong)" : "Red Wire", 220, 190);
+            if (stepIdx === 1) {
+                if (withMistake) {
+                    // Mouse is right-side up (mistake: did not flip)
+                    ctx.fillStyle = "#424242"; // Mouse right-side up
+                    ctx.fillRect(270, 320, 100, 60);
+                    
+                    ctx.fillStyle = "#ff0055"; // Highlight wrong orientation
+                    ctx.strokeRect(265, 315, 110, 70);
+                    
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Mouse is Right-Side Up (Mistake)", 210, 150);
+                } else {
+                    // Mouse is flipped upside down
+                    ctx.fillStyle = "#424242"; // Mouse bottom
+                    ctx.fillRect(270, 320, 100, 60);
+                    
+                    ctx.fillStyle = "#000"; // Optical sensor
+                    ctx.fillRect(315, 345, 10, 10);
+                    
+                    ctx.fillStyle = "#03a9f4"; // Blue restart button
+                    ctx.beginPath();
+                    ctx.arc(320, 332, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Mouse Flipped Upside Down", 230, 150);
+                }
             }
 
-            if (stepIdx >= 2) {
-                // Cover
-                ctx.fillStyle = "rgba(50, 50, 50, 0.9)";
-                ctx.fillRect(90, 280, 300, 100);
+            if (stepIdx === 2) {
+                // Mouse bottom
+                ctx.fillStyle = "#424242";
+                ctx.fillRect(270, 320, 100, 60);
                 
-                // Bolt
-                ctx.fillStyle = withMistake ? "#666" : "#ffd700"; // Silver (not tightened) vs Gold (tightened)
+                ctx.fillStyle = "#000"; // Optical sensor
+                ctx.fillRect(315, 345, 10, 10);
+                
+                ctx.fillStyle = withMistake ? "#03a9f4" : "#e040fb"; // Blue vs Pressed glowing color
                 ctx.beginPath();
-                ctx.arc(240, 330, 12, 0, Math.PI * 2);
+                ctx.arc(320, 332, 6, 0, Math.PI * 2);
                 ctx.fill();
                 
-                ctx.fillStyle = "#fff";
-                ctx.font = "12px Inter";
-                ctx.fillText(withMistake ? "Loose Bolt (Mistake)" : "Tight Bolt", 210, 360);
+                if (withMistake) {
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Button Not Pressed (Mistake)", 230, 150);
+                } else {
+                    // Draw finger pressing the button
+                    ctx.fillStyle = "#ffccbc"; // Skin tone finger
+                    ctx.fillRect(310, 240, 20, 90);
+                    
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "14px Inter";
+                    ctx.fillText("Restart Button Pressed (Success)", 210, 150);
+                }
             }
 
             addLog(`Simulated workbench state for Step ${stepIdx} (Mistake=${withMistake})`);
@@ -713,15 +763,11 @@ HTML_CONTENT = """
         }
 
         demoMistakeBtn.addEventListener("click", () => {
-            // Induce a mistake on step 1 (forgot Red wire, used green wire)
-            currentStepIdx = 1;
-            drawMockBench(1, true);
+            drawMockBench(currentStepIdx, true);
         });
 
         demoSuccessBtn.addEventListener("click", () => {
-            // Set up correct next step
-            currentStepIdx = 1;
-            drawMockBench(1, false);
+            drawMockBench(currentStepIdx, false);
         });
     </script>
 </body>

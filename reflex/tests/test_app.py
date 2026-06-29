@@ -11,7 +11,7 @@ from reflex.app import app, get_default_steps
 def test_get_default_steps() -> None:
     steps = get_default_steps()
     assert len(steps) == 3
-    assert steps[0].title == "Insert Blue Battery Pack"
+    assert steps[0].title == "Clear Desk Workspace"
 
 
 def test_index_route() -> None:
