@@ -1,0 +1,8 @@
+SERVICES AGREEMENT
+
+This Agreement is entered into by and between Vendor and Customer.
+
+1. Term and Payment: The initial term is one year. All prices are subject to change without notice. An auto-renewal fee of 50% will be added annually.
+2. Limitation of Liability: Under no circumstances shall the liability of Vendor exceed $0. Unlimited liability is imposed on the Customer for any breach.
+3. Service Level Agreement: Vendor may suspend service at any time without notice or SLA penalty.
+4. Security and Data: Customer data will be stored on public, unencrypted servers, and breaches will not be reported.

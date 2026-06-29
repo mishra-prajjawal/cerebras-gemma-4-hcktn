@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Red-Team Committee | Adversarial Document Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #070a13;
+            --bg-surface: rgba(17, 24, 39, 0.7);
+            --bg-card: rgba(30, 41, 59, 0.45);
+            --border-glow: rgba(99, 102, 241, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            
+            --accent-primary: #6366f1; /* Indigo */
+            --accent-glow: rgba(99, 102, 241, 0.4);
+            
+            /* Risk levels */
+            --color-low: #10b981;
+            --color-medium: #f59e0b;
+            --color-high: #ef4444;
+            --color-critical: #7f1d1d;
+            
+            --font-sans: 'Outfit', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(244, 63, 94, 0.05) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.04) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            background: rgba(7, 10, 19, 0.5);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-icon {
+            width: 2.25rem;
+            height: 2.25rem;
+            background: linear-gradient(135deg, var(--accent-primary), #ec4899);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            font-size: 1.25rem;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+        }
+
+        .logo-text h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #ffffff, #9ca3af);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-text p {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .header-meta {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        .meta-badge {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-secondary);
+        }
+
+        .meta-badge strong {
+            color: var(--text-primary);
+        }
+
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            background-color: var(--color-low);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--color-low);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.6; }
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            gap: 2rem;
+        }
+
+        /* Initial State: File Upload & Introduction */
+        .intro-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .hero-card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            backdrop-filter: blur(12px);
+        }
+
+        .hero-card h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #ffffff 30%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-card p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+
+        .tech-tags {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .tech-tag {
+            background: rgba(99, 102, 241, 0.07);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            color: #a5b4fc;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .upload-card {
+            background: var(--bg-surface);
+            border: 2px dashed rgba(99, 102, 241, 0.3);
+            border-radius: 1rem;
+            padding: 3rem 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(12px);
+            position: relative;
+        }
+
+        .upload-card:hover {
+            border-color: var(--accent-primary);
+            background: rgba(99, 102, 241, 0.03);
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.1);
+        }
+
+        .upload-icon {
+            width: 4rem;
+            height: 4rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            color: var(--accent-primary);
+            transition: transform 0.3s ease;
+        }
+
+        .upload-card:hover .upload-icon {
+            transform: translateY(-5px);
+            background: rgba(99, 102, 241, 0.1);
+            color: #ffffff;
+        }
+
+        .upload-card h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            max-width: 250px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn-select {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            padding: 0.65rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+            transition: all 0.2s ease;
+        }
+
+        .btn-select:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+
+        /* Loading / Racing State */
+        .loading-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 5rem 2rem;
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            backdrop-filter: blur(12px);
+        }
+
+        .committee-track {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 2rem;
+        }
+
+        .reviewer-race-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 0.75rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .reviewer-race-row::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            width: 100%;
+            background: linear-gradient(to right, transparent, var(--accent-primary), transparent);
+            animation: race-glow 2s infinite linear;
+        }
+
+        @keyframes race-glow {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .race-label {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 600;
+        }
+
+        .race-status {
+            font-size: 0.85rem;
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+
+        .loader-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.05);
+            border-top: 4px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 3rem;
+            height: 3rem;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Results Dashboard (Active State) */
+        .dashboard-container {
+            display: none; /* toggled to flex */
+            grid-template-columns: 1fr 1.2fr;
+            gap: 2rem;
+            height: calc(100vh - 180px);
+            min-height: 500px;
+        }
+
+        /* Left Side: Document Panel */
+        .doc-panel {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .panel-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .panel-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: -0.01em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .panel-header-actions {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .btn-action {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            transition: all 0.2s ease;
+        }
+
+        .btn-action:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .doc-content-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            font-family: 'Outfit', sans-serif;
+            line-height: 1.7;
+            font-size: 1.05rem;
+            color: rgba(243, 244, 246, 0.85);
+            white-space: pre-wrap;
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Highlighting citation styles */
+        .highlighted-cite {
+            background-color: rgba(245, 158, 11, 0.25);
+            border-bottom: 2px solid var(--color-medium);
+            padding: 0.1rem 0;
+            border-radius: 2px;
+            color: #ffffff;
+            font-weight: 500;
+            animation: highlight-pulse 1s ease-out;
+        }
+
+        @keyframes highlight-pulse {
+            0% { background-color: rgba(245, 158, 11, 0.7); }
+            100% { background-color: rgba(245, 158, 11, 0.25); }
+        }
+
+        /* Right Side: Verdict / Findings Panel */
+        .verdict-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        /* Verdict Header Card */
+        .verdict-banner-card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1rem;
+            padding: 1.75rem;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .verdict-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .verdict-badge {
+            padding: 0.5rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .verdict-badge.badge-critical {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+        }
+
+        .verdict-badge.badge-high {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #fbbf24;
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);
+        }
+
+        .verdict-badge.badge-medium {
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+        }
+
+        .verdict-badge.badge-low {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #34d399;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }
+
+        .verdict-meta-stats {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .verdict-meta-stats strong {
+            color: var(--text-primary);
+        }
+
+        .verdict-summary {
+            font-size: 1.05rem;
+            line-height: 1.5;
+            color: rgba(243, 244, 246, 0.9);
+        }
+
+        .blocking-list-container {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            border-left: 3px solid var(--accent-primary);
+        }
+
+        .blocking-list-container.blocking-active {
+            border-left-color: var(--color-high);
+            background: rgba(239, 68, 68, 0.02);
+        }
+
+        .blocking-list-container h4 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-bottom: 0.75rem;
+        }
+
+        .blocking-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .blocking-item {
+            font-size: 0.95rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            color: #fca5a5;
+        }
+
+        .blocking-item::before {
+            content: '🛑';
+            font-size: 0.9rem;
+        }
+
+        /* Findings Tabs / Selector */
+        .findings-filter-header {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 0.75rem;
+        }
+
+        .filter-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .filter-btn.active-filter {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.25);
+            color: #a5b4fc;
+        }
+
+        /* Findings List */
+        .findings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .finding-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .finding-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-top-left-radius: 0.75rem;
+            border-bottom-left-radius: 0.75rem;
+            background-color: var(--accent-primary);
+        }
+
+        .finding-card:hover {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .finding-card.highlighted-card {
+            border-color: rgba(245, 158, 11, 0.4);
+            box-shadow: 0 0 15px rgba(245, 158, 11, 0.08);
+            background: rgba(30, 41, 59, 0.75);
+        }
+
+        .finding-card.highlighted-card::before {
+            background-color: var(--color-medium);
+        }
+
+        .finding-card.sev-5::before { background-color: var(--color-critical); }
+        .finding-card.sev-4::before { background-color: var(--color-high); }
+        .finding-card.sev-3::before { background-color: var(--color-medium); }
+        .finding-card.sev-2::before { background-color: #fcd34d; }
+        .finding-card.sev-1::before { background-color: var(--color-low); }
+
+        .finding-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .finding-reviewer {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--accent-primary);
+        }
+
+        .finding-card.sev-5 .finding-reviewer { color: #f87171; }
+        .finding-card.sev-4 .finding-reviewer { color: #fb923c; }
+
+        .finding-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 0.25rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .finding-issue {
+            font-size: 1.05rem;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .finding-rec {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .finding-rec strong {
+            color: var(--text-primary);
+        }
+
+        .finding-citation-box {
+            background: rgba(0,0,0,0.2);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            border-left: 2px solid rgba(255,255,255,0.1);
+            color: rgba(255,255,255,0.7);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .finding-citation-box strong {
+            font-family: var(--font-sans);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        footer {
+            padding: 1.5rem 2.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            backdrop-filter: blur(12px);
+            background: rgba(7, 10, 19, 0.5);
+            margin-top: auto;
+        }
+
+        footer a {
+            color: var(--accent-primary);
+            text-decoration: none;
+        }
+
+        /* Drag and Drop Visual overlay */
+        .drag-overlay {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(99, 102, 241, 0.15);
+            border-radius: 1rem;
+            border: 2px solid var(--accent-primary);
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            backdrop-filter: blur(4px);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">RT</div>
+            <div class="logo-text">
+                <h1>Red-Team Committee</h1>
+                <p>Track 3: Enterprise Document Attack Swarm</p>
+            </div>
+        </div>
+        <div class="header-meta">
+            <div class="meta-badge">
+                <span class="pulse-dot"></span>
+                API Status: <strong>Cerebras Gemma 4</strong>
+            </div>
+            <div class="meta-badge">
+                Node: <strong>gemma-4-31b</strong>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- State 1: Upload View -->
+        <div id="upload-view" class="intro-grid">
+            <div class="hero-card">
+                <h2>Adversarial Document Shredding, Powered by Cerebras Speed</h2>
+                <p>
+                    Deploy a parallelized review committee of Legal, Risk, Finance, and Security experts on Gemma 4. 
+                    Drop a corporate contract, data policy, or document screenshot. Our model swarm attacks it in parallel, 
+                    proves findings with verbatim document citations, and computes a fail-closed verdict in milliseconds.
+                </p>
+                <div class="tech-tags">
+                    <span class="tech-tag">Cerebras Inference</span>
+                    <span class="tech-tag">Gemma 4 Swarm</span>
+                    <span class="tech-tag">Strict Pydantic Contracts</span>
+                    <span class="tech-tag">Verbatim Grounding</span>
+                    <span class="tech-tag">Fail-Closed Verdicts</span>
+                </div>
+            </div>
+            
+            <div id="drop-zone" class="upload-card">
+                <div class="drag-overlay" id="drag-overlay">Drop Document Here</div>
+                <input type="file" id="file-input" class="file-input" accept=".txt,.png,.jpg,.jpeg">
+                <div class="upload-icon">📥</div>
+                <h3>Adversarial Document Upload</h3>
+                <p>Drag and drop a <strong>.txt</strong> contract or <strong>screenshot (.png, .jpg)</strong> to audit</p>
+                <button class="btn-select" onclick="document.getElementById('file-input').click()">Select Document</button>
+            </div>
+        </div>
+
+        <!-- State 2: Loading / Deliberating View -->
+        <div id="loading-view" class="loading-container">
+            <div class="loader-spinner"></div>
+            <h3 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Assembling Adversarial Swarm</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 2rem;">Fanning out parallel expert reviewer agents on Cerebras Gemma-4-31b...</p>
+            
+            <div class="committee-track">
+                <div class="reviewer-race-row">
+                    <div class="race-label">⚖️ <span>Legal Reviewer</span></div>
+                    <div class="race-status" id="status-legal">Scanning liability caps...</div>
+                </div>
+                <div class="reviewer-race-row">
+                    <div class="race-label">🛡️ <span>Risk Reviewer</span></div>
+                    <div class="race-status" id="status-risk">Analyzing SLA metrics...</div>
+                </div>
+                <div class="reviewer-race-row">
+                    <div class="race-label">💰 <span>Finance Reviewer</span></div>
+                    <div class="race-status" id="status-finance">Auditing payment terms...</div>
+                </div>
+                <div class="reviewer-race-row">
+                    <div class="race-label">🔒 <span>Security & Privacy</span></div>
+                    <div class="race-status" id="status-security">Auditing data storage...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- State 3: Active Dashboard View -->
+        <div id="dashboard-view" class="dashboard-container">
+            <!-- Left Side: Interactive Document Viewer -->
+            <div class="doc-panel">
+                <div class="panel-header">
+                    <div class="panel-title">📄 Document Source Text</div>
+                    <div class="panel-header-actions">
+                        <button class="btn-action" onclick="resetReview()">
+                            🔄 Review New Document
+                        </button>
+                    </div>
+                </div>
+                <div class="doc-content-container" id="document-text-container">
+                    <!-- Text gets loaded here -->
+                </div>
+            </div>
+
+            <!-- Right Side: Verdict and Findings -->
+            <div class="verdict-panel">
+                <!-- Overall Verdict Card -->
+                <div class="verdict-banner-card" id="verdict-card">
+                    <div class="verdict-header">
+                        <h2 style="font-size: 1.5rem; font-weight: 800;">Committee Verdict</h2>
+                        <div class="verdict-badge badge-critical" id="verdict-badge">CRITICAL RISK</div>
+                    </div>
+                    
+                    <p class="verdict-summary" id="verdict-summary">
+                        Summary of issues found by the committee.
+                    </p>
+
+                    <div class="blocking-list-container" id="blocking-container">
+                        <h4>⚠️ Blocking Issues (Fail-Closed)</h4>
+                        <ul class="blocking-list" id="blocking-list">
+                            <!-- Items inserted dynamically -->
+                        </ul>
+                    </div>
+
+                    <div class="verdict-meta-stats">
+                        <span>Latency: <strong id="stat-latency">--</strong></span>
+                        <span>Throughput: <strong id="stat-throughput">--</strong></span>
+                    </div>
+                </div>
+
+                <!-- Findings Filter Header -->
+                <div class="findings-filter-header">
+                    <button class="filter-btn active-filter" onclick="filterFindings('all', this)">All Findings (<span id="count-all">0</span>)</button>
+                    <button class="filter-btn" onclick="filterFindings('Legal', this)">Legal (<span id="count-legal">0</span>)</button>
+                    <button class="filter-btn" onclick="filterFindings('Risk', this)">Risk (<span id="count-risk">0</span>)</button>
+                    <button class="filter-btn" onclick="filterFindings('Finance', this)">Finance (<span id="count-finance">0</span>)</button>
+                    <button class="filter-btn" onclick="filterFindings('Security', this)">Security (<span id="count-security">0</span>)</button>
+                </div>
+
+                <!-- Findings List -->
+                <div class="findings-list" id="findings-list">
+                    <!-- Cards populated dynamically -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>Red-Team Committee © 2026. Built on Cerebras Inference + Gemma 4.</p>
+    </footer>
+
+    <script>
+        let docText = "";
+        let findingsData = [];
+        let activeFilter = 'all';
+
+        // Register drag & drop events
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const dragOverlay = document.getElementById('drag-overlay');
+
+        if (dropZone) {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dragOverlay.style.display = 'flex';
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dragOverlay.style.display = 'none';
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragOverlay.style.display = 'none';
+                if (e.dataTransfer.files.length > 0) {
+                    processFile(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    processFile(e.target.files[0]);
+                }
+            });
+        }
+
+        async function processFile(file) {
+            // Show loading view
+            document.getElementById('upload-view').style.display = 'none';
+            document.getElementById('loading-view').style.display = 'flex';
+            document.getElementById('dashboard-view').style.display = 'none';
+
+            // Simulate progress timing updates
+            const statusLegal = document.getElementById('status-legal');
+            const statusRisk = document.getElementById('status-risk');
+            const statusFinance = document.getElementById('status-finance');
+            const statusSecurity = document.getElementById('status-security');
+
+            setTimeout(() => { statusLegal.innerText = "Analyzing indemnities..."; }, 800);
+            setTimeout(() => { statusRisk.innerText = "Checking liability gaps..."; }, 1200);
+            setTimeout(() => { statusFinance.innerText = "Auditing automatic extensions..."; }, 1500);
+            setTimeout(() => { statusSecurity.innerText = "Evaluating GDPR & compliance..."; }, 1900);
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/api/review', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+
+                const data = await response.json();
+                renderResults(data);
+            } catch (err) {
+                alert("Committee audit failed: " + err.message);
+                resetReview();
+            }
+        }
+
+        function escapeHTML(str) {
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function highlightCitation(start, end) {
+            const container = document.getElementById('document-text-container');
+            if (start < 0 || end < 0 || start >= end || end > docText.length) {
+                container.innerHTML = escapeHTML(docText);
+                return;
+            }
+            
+            const before = docText.substring(0, start);
+            const cite = docText.substring(start, end);
+            const after = docText.substring(end);
+            
+            container.innerHTML = escapeHTML(before) + 
+                                  '<mark class="highlighted-cite">' + 
+                                  escapeHTML(cite) + 
+                                  '</mark>' + 
+                                  escapeHTML(after);
+            
+            const mark = container.querySelector('mark');
+            if (mark) {
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function renderResults(data) {
+            docText = data.doc_text;
+            
+            // Re-organize findings from reports
+            findingsData = [];
+            let legalCount = 0;
+            let riskCount = 0;
+            let financeCount = 0;
+            let securityCount = 0;
+
+            data.reports.forEach(rep => {
+                const reviewerName = rep.reviewer.toLowerCase();
+                let category = 'Legal';
+                if (reviewerName.includes('risk')) { category = 'Risk'; riskCount += rep.findings.length; }
+                else if (reviewerName.includes('finance')) { category = 'Finance'; financeCount += rep.findings.length; }
+                else if (reviewerName.includes('security')) { category = 'Security'; securityCount += rep.findings.length; }
+                else { legalCount += rep.findings.length; }
+
+                rep.findings.forEach(f => {
+                    findingsData.push({
+                        ...f,
+                        category: category,
+                        reviewer: rep.reviewer
+                    });
+                });
+            });
+
+            // Update Counts
+            document.getElementById('count-all').innerText = findingsData.length;
+            document.getElementById('count-legal').innerText = legalCount;
+            document.getElementById('count-risk').innerText = riskCount;
+            document.getElementById('count-finance').innerText = financeCount;
+            document.getElementById('count-security').innerText = securityCount;
+
+            // Show Document text
+            document.getElementById('document-text-container').innerHTML = escapeHTML(docText);
+
+            // Verdict banner styling
+            const verdict = data.verdict;
+            const badge = document.getElementById('verdict-badge');
+            const card = document.getElementById('verdict-card');
+            
+            badge.className = 'verdict-badge';
+            const risk = verdict.overall_risk.toLowerCase();
+            if (risk === 'critical') {
+                badge.classList.add('badge-critical');
+                badge.innerText = 'CRITICAL RISK';
+            } else if (risk === 'high') {
+                badge.classList.add('badge-high');
+                badge.innerText = 'HIGH RISK (BLOCKED)';
+            } else if (risk === 'medium') {
+                badge.classList.add('badge-medium');
+                badge.innerText = 'MEDIUM RISK';
+            } else {
+                badge.classList.add('badge-low');
+                badge.innerText = 'LOW RISK';
+            }
+
+            document.getElementById('verdict-summary').innerText = verdict.summary;
+
+            // Stats
+            document.getElementById('stat-latency').innerText = (data.latency_ms / 1000).toFixed(2) + 's';
+            document.getElementById('stat-throughput').innerText = data.tokens_per_sec.toFixed(0) + ' tok/s';
+
+            // Blocking container
+            const blockContainer = document.getElementById('blocking-container');
+            const blockList = document.getElementById('blocking-list');
+            blockList.innerHTML = '';
+            
+            if (verdict.blocking_issues && verdict.blocking_issues.length > 0) {
+                blockContainer.className = 'blocking-list-container blocking-active';
+                verdict.blocking_issues.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = 'blocking-item';
+                    li.innerText = item;
+                    blockList.appendChild(li);
+                });
+            } else {
+                blockContainer.className = 'blocking-list-container';
+                const li = document.createElement('li');
+                li.style.color = 'var(--text-secondary)';
+                li.style.fontSize = '0.9rem';
+                li.style.listStyle = 'none';
+                li.innerText = "No blocking issues raised.";
+                blockList.appendChild(li);
+            }
+
+            // Render all findings list
+            renderFindingsList();
+
+            // Toggle screens
+            document.getElementById('loading-view').style.display = 'none';
+            document.getElementById('dashboard-view').style.display = 'grid';
+        }
+
+        function renderFindingsList() {
+            const listContainer = document.getElementById('findings-list');
+            listContainer.innerHTML = '';
+
+            const filtered = findingsData.filter(f => activeFilter === 'all' || f.category === activeFilter);
+
+            if (filtered.length === 0) {
+                listContainer.innerHTML = `<div style="text-align: center; color: var(--text-secondary); padding: 2rem;">No findings reported for this category.</div>`;
+                return;
+            }
+
+            filtered.forEach(f => {
+                const card = document.createElement('div');
+                card.className = `finding-card sev-${f.severity}`;
+                
+                card.onclick = () => {
+                    // Deselect previous
+                    document.querySelectorAll('.finding-card').forEach(c => c.classList.remove('highlighted-card'));
+                    card.classList.add('highlighted-card');
+                    highlightCitation(f.char_start, f.char_end);
+                };
+
+                card.innerHTML = `
+                    <div class="finding-top">
+                        <span class="finding-reviewer">${f.reviewer.split(' - ')[0]} Review</span>
+                        <span class="finding-badge">Sev ${f.severity}</span>
+                    </div>
+                    <div class="finding-issue">${escapeHTML(f.issue)}</div>
+                    <div class="finding-rec"><strong>Rec:</strong> ${escapeHTML(f.recommendation)}</div>
+                    <div class="finding-citation-box">
+                        <strong>Verbatim Quote:</strong>
+                        "${escapeHTML(f.citation)}"
+                    </div>
+                `;
+
+                listContainer.appendChild(card);
+            });
+        }
+
+        function filterFindings(category, btn) {
+            activeFilter = category;
+            
+            // update tabs
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active-filter'));
+            btn.classList.add('active-filter');
+
+            renderFindingsList();
+        }
+
+        function resetReview() {
+            document.getElementById('file-input').value = '';
+            document.getElementById('upload-view').style.display = 'grid';
+            document.getElementById('loading-view').style.display = 'none';
+            document.getElementById('dashboard-view').style.display = 'none';
+            docText = "";
+            findingsData = [];
+        }
+    </script>
+</body>
+</html>
